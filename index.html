@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Weather App</title>
+<style>
+:root{--bg:#EAF2FB;--card:#fff;--ink:#12223A;--muted:#5B6B83;--line:#D3DFEE;--accent:#2563EB;color-scheme:light}
+:root[data-theme="dark"]{--bg:#0E1626;--card:#172138;--ink:#EAF0FF;--muted:#9FB0CD;--line:#27345A;--accent:#7AA2FF;color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;display:flex;justify-content:center;padding:20px}
+.app{width:100%;max-width:460px}
+.top{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
+h1{font-size:22px;margin:0}
+.tools{display:flex;gap:8px}
+.tools button{border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:10px;padding:8px 12px;font-size:15px;cursor:pointer}
+form{display:flex;gap:8px;margin-bottom:8px}
+input{flex:1;min-width:0;padding:13px 14px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--ink);font-size:16px}
+form button,.loc{padding:13px 16px;border:0;border-radius:12px;background:var(--accent);color:#fff;font-size:16px;font-weight:600;cursor:pointer}
+.loc{background:transparent;color:var(--accent);padding:6px 0;font-size:14px;margin-bottom:14px}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.msg{color:var(--muted);text-align:center;padding:30px 10px}
+.msg.err{color:#D93025}
+.now{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:24px;text-align:center}
+.city{font-size:20px;font-weight:600}
+.icon{font-size:72px;line-height:1.1;margin:8px 0 0}
+.temp{font-size:64px;font-weight:700;line-height:1}
+.desc{color:var(--muted);margin:6px 0 16px}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;border-top:1px solid var(--line);padding-top:14px}
+.stats b{display:block;font-size:17px}
+.stats span{font-size:13px;color:var(--muted)}
+.days{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-top:14px}
+.day{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:10px 4px;text-align:center;font-size:13px}
+.day .e{font-size:26px;margin:4px 0}
+.day b{font-size:14px}
+.day .lo{color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="top">
+    <h1>Weather</h1>
+    <div class="tools">
+      <button id="unit" type="button" aria-label="Switch °C / °F">°C</button>
+      <button id="theme" type="button" aria-label="Toggle dark mode">◐</button>
+    </div>
+  </div>
+  <form id="form">
+    <input id="q" type="text" placeholder="Search a city, e.g. Delhi" aria-label="City name" autocomplete="off">
+    <button type="submit">Search</button>
+  </form>
+  <button class="loc" id="loc" type="button">Use my location</button>
+  <div id="out"><p class="msg">Search a city to see the weather.</p></div>
+</div>
+
+<script>
+var GEO = "https://geocoding-api.open-meteo.com/v1/search";
+var API = "https://api.open-meteo.com/v1/forecast";
+var out = document.getElementById("out");
+var state = { lat: null, lon: null, name: "" };
+var unit = "celsius";
+
+// Open-Meteo weather codes -> emoji + text
+function describe(code) {
+  if (code === 0) return ["☀️", "Clear sky"];
+  if (code <= 2) return ["🌤️", "Partly cloudy"];
+  if (code === 3) return ["☁️", "Overcast"];
+  if (code === 45 || code === 48) return ["🌫️", "Fog"];
+  if (code >= 51 && code <= 57) return ["🌦️", "Drizzle"];
+  if (code >= 61 && code <= 67) return ["🌧️", "Rain"];
+  if (code >= 71 && code <= 77) return ["❄️", "Snow"];
+  if (code >= 80 && code <= 82) return ["🌧️", "Rain showers"];
+  if (code === 85 || code === 86) return ["🌨️", "Snow showers"];
+  if (code >= 95) return ["⛈️", "Thunderstorm"];
+  return ["🌡️", "Unknown"];
+}
+
+function show(text, isErr) {
+  out.innerHTML = '<p class="msg' + (isErr ? " err" : "") + '"></p>';
+  out.firstChild.textContent = text;
+}
+
+async function loadWeather() {
+  show("Loading...");
+  var u = unit === "celsius" ? "°C" : "°F";
+  var url = API + "?latitude=" + state.lat + "&longitude=" + state.lon +
+    "&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m" +
+    "&daily=weather_code,temperature_2m_max,temperature_2m_min" +
+    "&timezone=auto&forecast_days=5&temperature_unit=" + unit;
+  try {
+    var res = await fetch(url);
+    if (!res.ok) throw new Error("Server error");
+    var d = await res.json();
+    var c = d.current, w = describe(c.weather_code);
+    var html = '<div class="now"><div class="city" id="cn"></div>' +
+      '<div class="icon">' + w[0] + '</div>' +
+      '<div class="temp">' + Math.round(c.temperature_2m) + u + '</div>' +
+      '<div class="desc">' + w[1] + '</div>' +
+      '<div class="stats">' +
+      '<div><b>' + Math.round(c.apparent_temperature) + u + '</b><span>Feels like</span></div>' +
+      '<div><b>' + c.relative_humidity_2m + '%</b><span>Humidity</span></div>' +
+      '<div><b>' + Math.round(c.wind_speed_10m) + ' km/h</b><span>Wind</span></div>' +
+      '</div></div><div class="days">';
+    d.daily.time.forEach(function (t, i) {
+      var day = new Date(t + "T00:00").toLocaleDateString("en-US", { weekday: "short" });
+      var e = describe(d.daily.weather_code[i])[0];
+      html += '<div class="day"><b>' + day + '</b><div class="e">' + e + '</div>' +
+        '<div>' + Math.round(d.daily.temperature_2m_max[i]) + '°</div>' +
+        '<div class="lo">' + Math.round(d.daily.temperature_2m_min[i]) + '°</div></div>';
+    });
+    out.innerHTML = html + "</div>";
+    document.getElementById("cn").textContent = state.name;
+  } catch (err) {
+    show("Couldn't load the weather. Check your internet and try again.", true);
+  }
+}
+
+async function searchCity(name) {
+  show("Searching...");
+  try {
+    var res = await fetch(GEO + "?name=" + encodeURIComponent(name) + "&count=1&language=en");
+    var d = await res.json();
+    if (!d.results || !d.results.length) { show("No city found for \"" + name + "\". Check the spelling.", true); return; }
+    var r = d.results[0];
+    state = { lat: r.latitude, lon: r.longitude, name: r.name + (r.country ? ", " + r.country : "") };
+    loadWeather();
+  } catch (err) {
+    show("Couldn't search right now. Check your internet and try again.", true);
+  }
+}
+
+document.getElementById("form").addEventListener("submit", function (e) {
+  e.preventDefault();
+  var v = document.getElementById("q").value.trim();
+  if (v) searchCity(v);
+});
+
+document.getElementById("loc").addEventListener("click", function () {
+  if (!navigator.geolocation) { show("Your browser doesn't support location.", true); return; }
+  show("Getting your location...");
+  navigator.geolocation.getCurrentPosition(function (p) {
+    state = { lat: p.coords.latitude, lon: p.coords.longitude, name: "Your location" };
+    loadWeather();
+  }, function (err) {
+    var m = "Couldn't get your location. Search a city instead.";
+    if (err.code === 1) {
+      m = window.isSecureContext
+        ? "Location is blocked. Allow it in your browser's site settings, or search a city."
+        : "Location needs https. Host the app on GitHub Pages or Netlify, or search a city.";
+    }
+    show(m, true);
+  });
+});
+
+document.getElementById("unit").addEventListener("click", function () {
+  unit = unit === "celsius" ? "fahrenheit" : "celsius";
+  this.textContent = unit === "celsius" ? "°C" : "°F";
+  if (state.lat !== null) loadWeather();
+});
+
+var root = document.documentElement;
+document.getElementById("theme").addEventListener("click", function () {
+  var dark = root.getAttribute("data-theme") === "dark";
+  root.setAttribute("data-theme", dark ? "light" : "dark");
+});
+if (matchMedia("(prefers-color-scheme: dark)").matches) root.setAttribute("data-theme", "dark");
+</script>
+</body>
+</html>
